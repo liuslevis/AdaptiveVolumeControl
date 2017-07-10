@@ -56,4 +56,5 @@ ax3.set_title('input db')
 ax3.plot(plots[2])
 
 
-plt.show()
+plt.savefig('output/fig.png')
+# plt.show()
