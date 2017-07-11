@@ -17,7 +17,7 @@ PLOT_DB_SAMPLE_NUM = 100
 PLOT_DB_MIN = 0
 PLOT_DB_MAX = 100
 CHUNK_SIZE = 100
-P_ref = 1 / 2 ** 10
+P_ref = 1 / 2 ** 14
 
 def Lp(Prms):
     if Prms != 0:
@@ -44,7 +44,7 @@ def calc_gain(wav):
     n = 20
     i = 0
     gain = 1.0
-    target = 60
+    target = 55
     epsilon = 2
     while True:
         i += 1

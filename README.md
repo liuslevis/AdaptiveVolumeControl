@@ -15,3 +15,7 @@ Control](http://web.cse.ohio-state.edu/~shen.94/papers//Li2001.pdf)
 [Automatic Loudness Control](https://www.acoustics.asn.au/conference_proceedings/ICA2010/cdrom-ICA2010/papers/p960.pdf)
 
 [StreamingKit](https://github.com/login?return_to=%2Ftumtumtum%2FStreamingKit)
+
+[iOS AVAudioEngine](http://www.jianshu.com/p/506c62183763)
+
+[Audio API Overview](https://www.objc.io/issues/24-audio/audio-api-overview/)
