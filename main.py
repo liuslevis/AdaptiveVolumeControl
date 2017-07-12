@@ -8,7 +8,9 @@ from scipy.io import wavfile
 from scipy import signal
 from functools import reduce
 
-WAV_FILES = ['./input/%d.wav' % i for i in range(1,3)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
+VERBOSE = True
+# WAV_FILES = ['./input/%d.wav' % i for i in range(1,3)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
+WAV_FILES = ['./input/1.wav']
 OUT_FILES = [path.replace('./input/', './output/') for path in WAV_FILES]
 PLOT_PATH = 'output/fig.png'
 
@@ -36,12 +38,20 @@ def dBFS(wav):
     return np.array(ret)
 
 def mean_dBFS(wav):
-    return np.mean(dBFS(wav))
+    return np.mean(dBFS(np.trim_zeros(wav)))
 
 
 def auto_gain_control(wav):
-    def calc_gain_dBFS(wav):
-        db = mean_dBFS(wav)
+    wav_gains = []
+
+    def peak_detector(chunk):
+        return np.max(np.abs(chunk))
+
+    def voice_activity_detection(peak):
+        return peak > (2 ** 5) / (2 ** BIT)
+
+    def calc_gain_dBFS(chunk):
+        db = mean_dBFS(chunk)
         gain = 0
         if db > 0:
             gain = 0
@@ -49,27 +59,42 @@ def auto_gain_control(wav):
             gain = - 1.5 * db - 9
         else:
             gain = 0
-        print('\tgain:%.4f db:%.2f -> %.2f' %(gain, db, mean_dBFS(wav * (2**gain) )))
         return gain
+
     def geomtric_mean(li):
         ret = pow(reduce(lambda x,y:x*y, li), 1 / len(li))
         return ret if ret >= 0 else li[-1]
+
     def arithmetic_mean(li):
         return np.mean(li)
 
-    # Whole song
-    # gain = calc_gain(wav)
-    # return wav * gain, np.array([gain])
-
     # Part
-    chunks = np.array_split(wav, 4230)
+    
+    chunks = np.array_split(wav, 120)
     ret = []
-    wav_gains = [0.1]
     for chunk in chunks:
-        gain = calc_gain_dBFS(chunk)
-        gain = arithmetic_mean(wav_gains[-50:] + [gain])
-        ret.append(chunk * (2**gain))
-        wav_gains.append(gain)
+        # PD
+        peak = peak_detector(chunk)
+        # VAD
+        act  = voice_activity_detection(peak)
+        if VERBOSE:        
+            print()
+            print('\tchunk:', chunk)
+            print('\tabs avg:%.6f' % np.mean(np.abs(chunk)))
+            print('\tpeak:%.6f' % peak)
+            print('\tact:',act)
+        # GAIN CONTROLLER
+        if act:
+            gain = calc_gain_dBFS(chunk)
+            # TODO 积分电路是这样实现的吗？
+            gain = arithmetic_mean(wav_gains[-10:] + [gain])
+            wav_gains.append(gain)
+            ret.append(chunk * (2**gain))
+            if VERBOSE: print('\tgain:%.4f db:%.2f -> %.2f' %(gain, mean_dBFS(chunk), mean_dBFS(chunk * (2**gain) )))
+        else:
+            ret.append(chunk)
+            if VERBOSE: print('\tgain:0')
+
     return np.concatenate(ret), wav_gains
 
 N = len(WAV_FILES)
