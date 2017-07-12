@@ -6,8 +6,9 @@ import sys
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
 from scipy import signal
+from functools import reduce
 
-WAV_FILES = ['./input/%d.wav' % i for i in range(1,4)] + ['./input/3.mid.wav', './input/3.loud.wav']
+WAV_FILES = ['./input/%d.wav' % i for i in range(1,3)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
 OUT_FILES = [path.replace('./input/', './output/') for path in WAV_FILES]
 PLOT_PATH = 'output/fig.png'
 
@@ -16,16 +17,19 @@ PLOT_WAV_MAX = 0.01
 PLOT_DB_SAMPLE_NUM = 100
 PLOT_DB_MIN = 0
 PLOT_DB_MAX = 100
-CHUNK_SIZE = 100
-P_ref = 1 / 2 ** 14
+PLOT_GAIN_SAMPLE_NUM = 100
+PLOT_GAIN_MIN = -2
+PLOT_GAIN_MAX = 2
+CHUNK_SIZE = 50
+P_REF = 1 / 2 ** 14
 
 def Lp(Prms):
     if Prms != 0:
-        return 20 * math.log10(Prms / P_ref)
+        return 20 * math.log10(Prms / P_REF)
     return 0
 
 def Prms(Lp):
-    return 10 ** (Lp / 20) * P_ref
+    return 10 ** (Lp / 20) * P_REF
 
 def db(wav):
     ret = []
@@ -40,45 +44,61 @@ def db(wav):
 def mean_db(wav):
     return np.mean(db(wav))
 
-def calc_gain(wav):
-    n = 20
-    i = 0
-    gain = 1.0
-    target = 55
-    epsilon = 2
-    while True:
-        i += 1
-        if i >= n: break
-
-        db = mean_db(wav * gain)
-
-        if abs(db - target) < epsilon: break
-
-        if db > target + 40:
-            gain *= 0.0005
-        elif db > target + 30:
-            gain *= 0.05
-        elif db > target + 20:
-            gain *= 0.1
-        elif db > target + 10:
-            gain *= 0.5
-        elif db > target + 0:
-            gain *= 0.7
-        elif db > target - 10:
-            gain *= 1.2
-        elif db > target - 20:
-            gain *= 1.5
-        elif db > target - 30:
-            gain *= 2.0
-
-        print('\tgain:%.2f db:%.2f -> %.2f' %(gain, db, mean_db(wav * gain)))
-
-    return gain
 
 def auto_gain_control(wav):
-    gain = calc_gain(wav)
-    ret = wav * gain
-    return ret
+    def calc_gain(wav):
+        n = 20
+        i = 0
+        gain = 1.0
+        target = 50
+        epsilon = 2
+        while True:
+            i += 1
+            if i >= n: break
+
+            db = mean_db(wav * gain)
+
+            if abs(db - target) < epsilon: break
+
+            if db > target + 40:
+                gain *= 0.0005
+            elif db > target + 30:
+                gain *= 0.05
+            elif db > target + 20:
+                gain *= 0.1
+            elif db > target + 10:
+                gain *= 0.5
+            elif db > target + 0:
+                gain *= 0.7
+            elif db > target - 10:
+                gain *= 1.2
+            elif db > target - 20:
+                gain *= 1.5
+            elif db > target - 30:
+                gain *= 2.0
+            # print('\tgain:%.2f db:%.2f -> %.2f' %(gain, db, mean_db(wav * gain)))
+        return gain
+    def geomtric_mean(li):
+        ret = pow(reduce(lambda x,y:x*y, li), 1 / len(li))
+        return ret if ret >= 0 else li[-1]
+    def arithmetic_mean(li):
+        return np.mean(li)
+
+    # Whole song
+    # gain = calc_gain(wav)
+    # return wav * gain, np.array([gain])
+
+    # Part
+    chunks = np.array_split(wav, 423)
+    ret = []
+    wav_gains = [0.1]
+    for chunk in chunks:
+        gain = geomtric_mean(wav_gains[-100:] + [calc_gain(chunk)])
+        # ret.append(chunk * gain)
+        ret.append(chunk * gain)
+        wav_gains.append(gain)
+        # print('\tgain:%.2f mean_db:%.2f' % (gain, mean_db(chunk)))
+    return np.concatenate(ret), wav_gains
 
 N = len(WAV_FILES)
 wav_paths = WAV_FILES
@@ -88,11 +108,12 @@ wav_raws = [None for i in range(N)]
 wav_outs = [None for i in range(N)]
 wav_out_dbs  = [None for i in range(N)]
 wav_raw_dbs  = [None for i in range(N)]
+wav_gains = [None for i in range(N)]
 
 for i in range(N):
     rates[i], wav_raws[i] = scipy.io.wavfile.read(wav_paths[i])
     print('\nauto_gain_control:', wav_paths[i])
-    wav_outs[i] = auto_gain_control(wav_raws[i])
+    wav_outs[i], wav_gains[i] = auto_gain_control(wav_raws[i])
     wav_out_dbs[i] = db(wav_outs[i])
     wav_raw_dbs[i] = db(wav_raws[i])
 
@@ -108,33 +129,42 @@ for i in range(N):
         scipy.signal.resample(wav_raw_dbs[i], PLOT_DB_SAMPLE_NUM),
         scipy.signal.resample(wav_outs[i],    PLOT_WAV_SAMPLE_NUM),
         scipy.signal.resample(wav_out_dbs[i], PLOT_DB_SAMPLE_NUM),
+        scipy.signal.resample(wav_gains[i],   PLOT_GAIN_SAMPLE_NUM),
+
         ]
 
-fig = plt.figure(figsize=(16,12))
+fig = plt.figure(figsize=(16, 4*N))
 
+M = 5
 for i in range(N):
-    ax1 = fig.add_subplot(N, 4, 1 + 4*i)
+    ax1 = fig.add_subplot(N, M, 1 + M*i)
     ax1.set_title(wav_paths[i])
     ax1.set_autoscale_on(False)
     ax1.axis([0, PLOT_WAV_SAMPLE_NUM, -PLOT_WAV_MAX, PLOT_WAV_MAX])
-    ax1.plot(plots[0 + 4*i])
+    ax1.plot(plots[0 + M*i])
 
-    ax2 = fig.add_subplot(N, 4, 2 + 4*i)
+    ax2 = fig.add_subplot(N, M, 2 + M*i)
     ax2.set_title('input db')
     ax2.set_autoscale_on(False)
     ax2.axis([0, PLOT_DB_SAMPLE_NUM, PLOT_DB_MIN, PLOT_DB_MAX])
-    ax2.plot(plots[1 + 4*i])
+    ax2.plot(plots[1 + M*i])
 
-    ax3 = fig.add_subplot(N, 4, 3 + 4*i)
+    ax3 = fig.add_subplot(N, M, 3 + M*i)
     ax3.set_title(out_paths[i])
     ax3.set_autoscale_on(False)
     ax3.axis([0, PLOT_WAV_SAMPLE_NUM, -PLOT_WAV_MAX, PLOT_WAV_MAX])
-    ax3.plot(plots[2 + 4*i])
+    ax3.plot(plots[2 + M*i])
 
-    ax4 = fig.add_subplot(N, 4, 4 + 4*i)
+    ax4 = fig.add_subplot(N, M, 4 + M*i)
     ax4.set_title('output db')
     ax4.set_autoscale_on(False)
     ax4.axis([0, PLOT_DB_SAMPLE_NUM, PLOT_DB_MIN, PLOT_DB_MAX])
-    ax4.plot(plots[3 + 4*i])
+    ax4.plot(plots[3 + M*i])
+
+    ax5 = fig.add_subplot(N, M, 5 + M*i)
+    ax5.set_title('auto gain')
+    ax5.set_autoscale_on(False)
+    ax5.axis([0, PLOT_GAIN_SAMPLE_NUM, PLOT_GAIN_MIN, PLOT_GAIN_MAX])
+    ax5.plot(plots[4 + M*i])
 
 plt.savefig(PLOT_PATH)
