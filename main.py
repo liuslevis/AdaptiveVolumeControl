@@ -17,30 +17,20 @@ PLOT_WAV_MAX = 0.1
 PLOT_DB_SAMPLE_NUM = 100
 PLOT_DB_MIN = -15
 PLOT_DB_MAX = 0
-PLOT_GAIN_MIN = -2
-PLOT_GAIN_MAX = 2
+PLOT_GAIN_MAX = 4
 CHUNK_SIZE = 50
 P_REF = 1 / 2 ** 14
 BIT = 32 - 1
 
-def Lp(Prms):
-    if Prms != 0:
-        return 20 * math.log10(Prms / P_REF)
-    return 0
-
-# def Prms(Lp):
-#     return 10 ** (Lp / 20) * P_REF
-
-def dBFS_(Prms):
-    return np.log2(np.abs(Prms) / 1)
 
 def dBFS(wav):
+    def dBFS_(Prms):
+        return np.log2(np.abs(Prms) / 1)
     ret = []
     chunks = np.array_split(wav, CHUNK_SIZE)
     chunks = list(map(lambda x:x.astype(np.float32), chunks))
     for chunk in chunks:
         prms = np.mean(np.sqrt(np.abs(chunk ** 2)))
-        # db = Lp(prms)
         db = dBFS_(prms)
         ret.append(db)
     return np.array(ret)
@@ -50,40 +40,16 @@ def mean_dBFS(wav):
 
 
 def auto_gain_control(wav):
-    def calc_gain(wav):
-        n = 20
-        i = 0
-        gain = 1.0
-        target = -7
-        epsilon = 2
-        while True:
-            i += 1
-            if i >= n: break
-
-            db = mean_dBFS(wav * gain)
-            
-            if db == -np.inf: return 1.0
-
-            if abs(db - target) < epsilon: break
-
-            if db > -4:
-                gain *= 0.7
-            elif db > -5:
-                gain *= 0.8
-            elif db > -6:
-                gain *= 0.9
-            elif db > -7:
-                gain *= 1.1
-            elif db > -8:
-                gain *= 1.2
-            elif db > -9:
-                gain *= 1.3
-            elif db > -10:
-                gain *= 1.4
-            else:
-                gain *= 2 ** 1
-
-            print('\titer:%d/%d gain:%.4f db:%.2f -> %.2f' %(i, n, gain, db, mean_dBFS(wav * gain)))
+    def calc_gain_dBFS(wav):
+        db = mean_dBFS(wav)
+        gain = 0
+        if db > 0:
+            gain = 0
+        elif db > -70:
+            gain = - 1.5 * db - 9
+        else:
+            gain = 0
+        print('\tgain:%.4f db:%.2f -> %.2f' %(gain, db, mean_dBFS(wav * (2**gain) )))
         return gain
     def geomtric_mean(li):
         ret = pow(reduce(lambda x,y:x*y, li), 1 / len(li))
@@ -96,13 +62,13 @@ def auto_gain_control(wav):
     # return wav * gain, np.array([gain])
 
     # Part
-    chunks = np.array_split(wav, 423)
+    chunks = np.array_split(wav, 4230)
     ret = []
     wav_gains = [0.1]
     for chunk in chunks:
-        gain = geomtric_mean(wav_gains[-3:] + [calc_gain(chunk)])
-        # gain = calc_gain(chunk)
-        ret.append(chunk * gain)
+        gain = calc_gain_dBFS(chunk)
+        gain = arithmetic_mean(wav_gains[-50:] + [gain])
+        ret.append(chunk * (2**gain))
         wav_gains.append(gain)
     return np.concatenate(ret), wav_gains
 
@@ -168,7 +134,7 @@ for i in range(N):
     ax5 = fig.add_subplot(N, M, 5 + M*i)
     ax5.set_title('auto gain')
     ax5.set_autoscale_on(False)
-    ax5.axis([0, len(plots[4 + M*i]), PLOT_GAIN_MIN, PLOT_GAIN_MAX])
+    ax5.axis([0, len(plots[4 + M*i]), -PLOT_GAIN_MAX, PLOT_GAIN_MAX])
     ax5.plot(plots[4 + M*i])
 
 plt.savefig(PLOT_PATH)
