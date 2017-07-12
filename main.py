@@ -15,34 +15,39 @@ PLOT_PATH = 'output/fig.png'
 PLOT_WAV_SAMPLE_NUM = 10000
 PLOT_WAV_MAX = 0.01
 PLOT_DB_SAMPLE_NUM = 100
-PLOT_DB_MIN = 0
-PLOT_DB_MAX = 100
+PLOT_DB_MIN = -32
+PLOT_DB_MAX = 0
 PLOT_GAIN_SAMPLE_NUM = 100
 PLOT_GAIN_MIN = -2
 PLOT_GAIN_MAX = 2
 CHUNK_SIZE = 50
 P_REF = 1 / 2 ** 14
+BIT = 32 - 1
 
 def Lp(Prms):
     if Prms != 0:
         return 20 * math.log10(Prms / P_REF)
     return 0
 
-def Prms(Lp):
-    return 10 ** (Lp / 20) * P_REF
+# def Prms(Lp):
+#     return 10 ** (Lp / 20) * P_REF
 
-def db(wav):
+def dBFS_(Prms):
+    return np.log2(np.abs(Prms) / 1)
+
+def dBFS(wav):
     ret = []
     chunks = np.array_split(wav, CHUNK_SIZE)
     chunks = list(map(lambda x:x.astype(np.float32), chunks))
     for chunk in chunks:
         prms = np.mean(np.sqrt(np.abs(chunk ** 2)))
-        db = Lp(prms)
+        # db = Lp(prms)
+        db = dBFS_(prms)
         ret.append(db)
     return np.array(ret)
 
-def mean_db(wav):
-    return np.mean(db(wav))
+def mean_dBFS(wav):
+    return np.mean(dBFS(wav))
 
 
 def auto_gain_control(wav):
@@ -50,13 +55,13 @@ def auto_gain_control(wav):
         n = 20
         i = 0
         gain = 1.0
-        target = 50
+        target = -20
         epsilon = 2
         while True:
             i += 1
             if i >= n: break
 
-            db = mean_db(wav * gain)
+            db = mean_dBFS(wav * gain)
 
             if abs(db - target) < epsilon: break
 
@@ -76,7 +81,7 @@ def auto_gain_control(wav):
                 gain *= 1.5
             elif db > target - 30:
                 gain *= 2.0
-            # print('\tgain:%.2f db:%.2f -> %.2f' %(gain, db, mean_db(wav * gain)))
+            # print('\tgain:%.2f db:%.2f -> %.2f' %(gain, db, mean_dBFS(wav * gain)))
         return gain
     def geomtric_mean(li):
         ret = pow(reduce(lambda x,y:x*y, li), 1 / len(li))
@@ -97,7 +102,7 @@ def auto_gain_control(wav):
         # ret.append(chunk * gain)
         ret.append(chunk * gain)
         wav_gains.append(gain)
-        # print('\tgain:%.2f mean_db:%.2f' % (gain, mean_db(chunk)))
+        # print('\tgain:%.2f mean_db:%.2f' % (gain, mean_dBFS(chunk)))
     return np.concatenate(ret), wav_gains
 
 N = len(WAV_FILES)
@@ -114,12 +119,13 @@ for i in range(N):
     rates[i], wav_raws[i] = scipy.io.wavfile.read(wav_paths[i])
     print('\nauto_gain_control:', wav_paths[i])
     wav_outs[i], wav_gains[i] = auto_gain_control(wav_raws[i])
-    wav_out_dbs[i] = db(wav_outs[i])
-    wav_raw_dbs[i] = db(wav_raws[i])
+    wav_out_dbs[i] = dBFS(wav_outs[i])
+    wav_raw_dbs[i] = dBFS(wav_raws[i])
 
     scipy.io.wavfile.write(out_paths[i], rates[i], wav_outs[i])
 
 #########
+print(wav_out_dbs[0])
 print('\nplotting:', PLOT_PATH)
 plots = []
 
