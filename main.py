@@ -8,22 +8,32 @@ from scipy.io import wavfile
 from scipy import signal
 from functools import reduce
 
-VERBOSE = True
-# WAV_FILES = ['./input/%d.wav' % i for i in range(1,3)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
-WAV_FILES = ['./input/1.wav']
+VERBOSE = False
+# WAV_FILES = ['./input/%d.wav' % i for i in range(1,10)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
+WAV_FILES = ['./input/%d.wav' % i for i in range(1,10)]
+# WAV_FILES = ['./input/2.wav']
 OUT_FILES = [path.replace('./input/', './output/') for path in WAV_FILES]
 PLOT_PATH = 'output/fig.png'
 
 PLOT_WAV_SAMPLE_NUM = 10000
-PLOT_WAV_MAX = 0.1
+PLOT_WAV_MAX = 1.0
 PLOT_DB_SAMPLE_NUM = 100
 PLOT_DB_MIN = -15
 PLOT_DB_MAX = 0
-PLOT_GAIN_MAX = 4
+PLOT_GAIN_MAX = 1
 CHUNK_SIZE = 50
 P_REF = 1 / 2 ** 14
 BIT = 32 - 1
 
+def subsample(li, k):
+    # li = li[:int(len(li)/5)]
+    ret = []
+    step = int(len(li) / k)
+    if step == 0:
+        return li
+    for i in range(0, len(li), step):
+        ret.append(li[i])
+    return np.array(ret)
 
 def dBFS(wav):
     def dBFS_(Prms):
@@ -37,12 +47,14 @@ def dBFS(wav):
         ret.append(db)
     return np.array(ret)
 
+def trim_soundless(wav):
+    return wav[wav > 0.001]
+
 def mean_dBFS(wav):
     return np.mean(dBFS(np.trim_zeros(wav)))
-
+    # return np.mean(dBFS(trim_soundless(wav)))
 
 def auto_gain_control(wav):
-    wav_gains = []
 
     def peak_detector(chunk):
         return np.max(np.abs(chunk))
@@ -52,14 +64,16 @@ def auto_gain_control(wav):
 
     def calc_gain_dBFS(chunk):
         db = mean_dBFS(chunk)
-        gain = 0
-        if db > 0:
-            gain = 0
-        elif db > -70:
-            gain = - 1.5 * db - 9
-        else:
-            gain = 0
-        return gain
+        dbs   = [0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10]
+        gains = [0,  0,  0,  0,  0, .2, .4, .6, .8, .1, 1.2]
+        gains = [0, -.3,-.2,-.1,-.1, 0,  0,  0,  0,  0,   0]
+
+        assert len(dbs) == len(gains), 'check'
+        for i in range(len(dbs)):
+            if db > dbs[i]:
+                return gains[i]
+        return gains[-1]
+
 
     def geomtric_mean(li):
         ret = pow(reduce(lambda x,y:x*y, li), 1 / len(li))
@@ -69,33 +83,30 @@ def auto_gain_control(wav):
         return np.mean(li)
 
     # Part
-    
-    chunks = np.array_split(wav, 120)
+    AGC_WINDOW = 5
+    chunks = np.array_split(wav, 263)
     ret = []
+    wav_gains = [0 for i in range(AGC_WINDOW)]
     for chunk in chunks:
         # PD
-        peak = peak_detector(chunk)
+        # peak = peak_detector(chunk)
         # VAD
-        act  = voice_activity_detection(peak)
+        # act  = voice_activity_detection(peak)
         if VERBOSE:        
             print()
-            print('\tchunk:', chunk)
+            print('\tchunk:', len(chunk), chunk)
             print('\tabs avg:%.6f' % np.mean(np.abs(chunk)))
-            print('\tpeak:%.6f' % peak)
-            print('\tact:',act)
+            # print('\tpeak:%.6f' % peak)
+            # print('\tact:',act)
         # GAIN CONTROLLER
-        if act:
-            gain = calc_gain_dBFS(chunk)
-            # TODO 积分电路是这样实现的吗？
-            gain = arithmetic_mean(wav_gains[-10:] + [gain])
-            wav_gains.append(gain)
-            ret.append(chunk * (2**gain))
-            if VERBOSE: print('\tgain:%.4f db:%.2f -> %.2f' %(gain, mean_dBFS(chunk), mean_dBFS(chunk * (2**gain) )))
-        else:
-            ret.append(chunk)
-            if VERBOSE: print('\tgain:0')
+        gain = calc_gain_dBFS(chunk)
+        # TODO 积分电路是这样实现的吗？
+        # gain = arithmetic_mean(wav_gains[-AGC_WINDOW:] + [gain])
+        wav_gains.append(gain)
+        ret.append(chunk * (2**gain))
+        if VERBOSE: print('\tgain:%.4f db:%.2f -> %.2f' %(gain, mean_dBFS(chunk), mean_dBFS(chunk * (2**gain) )))
 
-    return np.concatenate(ret), wav_gains
+    return np.concatenate(ret), wav_gains[AGC_WINDOW:]
 
 N = len(WAV_FILES)
 wav_paths = WAV_FILES
@@ -107,8 +118,8 @@ wav_out_dbs  = [None for i in range(N)]
 wav_raw_dbs  = [None for i in range(N)]
 wav_gains = [None for i in range(N)]
 for i in range(N):
-    rates[i], wav_raws[i] = scipy.io.wavfile.read(wav_paths[i])
     print('\nauto_gain_control:', wav_paths[i])
+    rates[i], wav_raws[i] = scipy.io.wavfile.read(wav_paths[i])
     wav_outs[i], wav_gains[i] = auto_gain_control(wav_raws[i])
     wav_out_dbs[i] = dBFS(wav_outs[i])
     wav_raw_dbs[i] = dBFS(wav_raws[i])
@@ -118,19 +129,17 @@ for i in range(N):
 ##### Graph ####
 print('\nplotting:', PLOT_PATH)
 plots = []
-
 for i in range(N):
+    print('\tfig ', i)
     plots += [
-        scipy.signal.resample(wav_raws[i],    PLOT_WAV_SAMPLE_NUM),
-        scipy.signal.resample(wav_raw_dbs[i], PLOT_DB_SAMPLE_NUM),
-        scipy.signal.resample(wav_outs[i],    PLOT_WAV_SAMPLE_NUM),
-        scipy.signal.resample(wav_out_dbs[i], PLOT_DB_SAMPLE_NUM),
+        subsample(wav_raws[i],    PLOT_WAV_SAMPLE_NUM),
+        wav_raw_dbs[i],
+        subsample(wav_outs[i],    PLOT_WAV_SAMPLE_NUM),
+        wav_out_dbs[i],
         wav_gains[i],
         ]
-
-fig = plt.figure(figsize=(16, 4*N))
-
 M = 5
+fig = plt.figure(figsize=(4*M, 4*N))
 for i in range(N):
     ax1 = fig.add_subplot(N, M, 1 + M*i)
     ax1.set_title(wav_paths[i])
@@ -141,7 +150,7 @@ for i in range(N):
     ax2 = fig.add_subplot(N, M, 2 + M*i)
     ax2.set_title('input db')
     ax2.set_autoscale_on(False)
-    ax2.axis([0, PLOT_DB_SAMPLE_NUM, PLOT_DB_MIN, PLOT_DB_MAX])
+    ax2.axis([0, len(plots[1 + M*i]), PLOT_DB_MIN, PLOT_DB_MAX])
     ax2.plot(plots[1 + M*i])
 
     ax3 = fig.add_subplot(N, M, 3 + M*i)
@@ -153,7 +162,7 @@ for i in range(N):
     ax4 = fig.add_subplot(N, M, 4 + M*i)
     ax4.set_title('output db')
     ax4.set_autoscale_on(False)
-    ax4.axis([0, PLOT_DB_SAMPLE_NUM, PLOT_DB_MIN, PLOT_DB_MAX])
+    ax4.axis([0, len(plots[3 + M*i]), PLOT_DB_MIN, PLOT_DB_MAX])
     ax4.plot(plots[3 + M*i])
 
     ax5 = fig.add_subplot(N, M, 5 + M*i)
