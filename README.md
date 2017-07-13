@@ -7,7 +7,7 @@ Automatically control volume of songs in playlist to make a better experience.
 
 ```
 for ((i=1;i<10;i++)); do
-    ffmpeg -i input/${i}.mp3 -acodec pcm_f32le -ac 1 -ar 44100 input/${i}.wav;
+    ffmpeg -i raw/${i}.mp3 -acodec pcm_f32le -ac 1 -ar 44100 input/${i}.wav;
 done
 ```
 
