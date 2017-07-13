@@ -14,7 +14,7 @@ done
 ## Run
 
 ```
-python3 agc.py
+python3 agc.py # -> output/*.wav
 ```
 
 ## Reference
