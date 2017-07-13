@@ -10,8 +10,7 @@ from functools import reduce
 
 VERBOSE = False
 # WAV_FILES = ['./input/%d.wav' % i for i in range(1,10)] + ['./input/3.mid.wav']#+ ['./input/3.mid.wav', './input/3.loud.wav']
-WAV_FILES = ['./input/%d.wav' % i for i in range(1,10)]
-# WAV_FILES = ['./input/2.wav']
+WAV_FILES = ['./input/%d.wav' % i for i in range(1,3)]
 OUT_FILES = [path.replace('./input/', './output/') for path in WAV_FILES]
 PLOT_PATH = 'output/fig.png'
 
@@ -138,7 +137,7 @@ for i in range(N):
         wav_out_dbs[i],
         wav_gains[i],
         ]
-M = 5
+M = 1
 fig = plt.figure(figsize=(4*M, 4*N))
 for i in range(N):
     ax1 = fig.add_subplot(N, M, 1 + M*i)
