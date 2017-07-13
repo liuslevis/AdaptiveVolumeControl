@@ -11,6 +11,12 @@ for ((i=1;i<10;i++)); do
 done
 ```
 
+## Run
+
+```
+python3 agc.py
+```
+
 ## Reference
 
 Perez, Automatic Gain Control http://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=4&ved=0CEEQFjAD&url=http://www.springer.com/cda/content/document/cda_downloaddocument/9781461401667-c2.pdf?SGWID=0-0-45-1180039-p174121673&ei=LtcQU7McgrXgBMTdgdAI&usg=AFQjCNHUReiMDeUPA-hpYoerCXiPZLvXZg&sig2=j5UA1xMWoB-qjdelhsDpLQ&bvm=bv.62286460,d.bGE&cad=rja
