@@ -3,6 +3,24 @@ Automatically control volume of songs in playlist to make a better experience.
 
 ## Introduction
 
+### Feedback AGC
+
+Pros: Lower input dynamic range required by peak detector; Inherently higher linearity
+
+Cons: Instabilities with high compression or expansion; Higher settling-time
+
+* looper filter: generate VGA parameter
+* peak detector: detect amplitude level of Vout
+* log conv: make AGC a linear system in decibels
+
+### Feedforward AGC
+
+Pros: No instability problems; Ideally zero settling-time
+
+Cons: AGC input dynamic range required by peak detector; High linearity required in loop
+
+
+
 ## Data Prep
 
 ```
@@ -44,3 +62,7 @@ Audio API Overview https://www.objc.io/issues/24-audio/audio-api-overview/
 Understanding Automatic Gain Control https://www.allaboutcircuits.com/technical-articles/understanding-automatic-gain-control/
 
 tf_agc - Time-frequency Automatic Gain Control https://labrosa.ee.columbia.edu/matlab/tf_agc/
+
+Youtube: Automatic Volume Level Control circuit demonstration | scanner https://www.youtube.com/watch?v=pUii_pDQxg8
+
+Math Plot: http://fooplot.com/#W3sidHlwZSI6MCwiZXEiOiItMy8yKngtNyIsImNvbG9yIjoiIzAwMDAwMCJ9LHsidHlwZSI6MTAwMCwid2luZG93IjpbIi0yNDIuNjgzODY5NDAwMDI0MjYiLCIyNDEuNjAzODY5NDAwMDI0MjgiLCItMTUwLjk5MTYxMTkzODQ3NjUyIiwiMTQ3LjAzMTYxMTkzODQ3NjUiXX1d
