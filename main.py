@@ -9,23 +9,36 @@ from scipy import signal
 from functools import reduce
 
 VERBOSE = False
+PLOT = True
 
-IN_PATHS = ['./input/%d.wav' % i for i in range(1, 2)]
-OUT_FILES = [path.replace('./input/', './output/') for path in IN_PATHS]
+IN_PATHS = ['./input/%d.wav' % i for i in range(0, 10)]
+OUT_PATHS = [path.replace('./input/', './output/') for path in IN_PATHS]
 PLOT_PATH = 'output/fig.png'
+
+BIT = 32 - 1
+SAMPLE_RATE = 41100
+AGC_FRAME_MS = 10 #ms
+AGC_SUB_FRAME_MS = 1 #ms
+CHUNK_SIZE = int(41100 * AGC_FRAME_MS / 1000)
+VAD_THES = 0.001
+AGC_WINDOW = AGC_FRAME_MS * 1000
+
+P_REF = 1 / 2 ** 14
+
+AGC_DBS  = [-0. , -0.5,  -1., -1.5,  -2., -2.5,  -3., -3.5,  -4., -4.5,  -5., -5.5,  -6., -6.5,  -7., -7.5, -8.]
+AGC_GAIN = [  -3,   -2,   -2,   -2,   -1,   -1,   -1,   -1,    0,    0,    0,    1,    2,    3,    4,    5,   6]
 
 PLOT_WAV_SAMPLE_NUM = 10000
 PLOT_WAV_MAX = 1.0
 PLOT_DB_SAMPLE_NUM = 100
 PLOT_DB_MIN = -20
 PLOT_DB_MAX = 0
-PLOT_GAIN_MAX = 2
-CHUNK_SIZE = 50000
-P_REF = 1 / 2 ** 14
-BIT = 32 - 1
-
-AGC_DBS  = [-0. , -0.5,  -1., -1.5,  -2., -2.5,  -3., -3.5,  -4., -4.5,  -5., -5.5,  -6., -6.5,  -7., -7.5, -8.]
-AGC_GAIN = [  -3,   -2,   -2,   -2,   -1,   -1,   -1,   -1,    0,    0,    0,    1,    1,    1,    0,    0,   0]
+PLOT_GAIN_MAX = np.max(AGC_GAIN)
+PLOT_GAIN_MIN = np.min(AGC_GAIN)
+PLOT_PD_MAX = 2
+PLOT_PD_MIN = 0
+PLOT_VAD_MAX = 2
+PLOT_VAD_MIN = 0
 
 def wav_sample(li, k):
     ret = []
@@ -48,13 +61,15 @@ def mean_dBFS(wav):
     # return np.mean(dBFS(trim_soundless(wav)))
 
 def peak_detector(wav):
-    return np.max(np.abs(wav))
+    return np.max(np.multiply(wav, wav))
 
-def voice_activity_detection(peak):
-    return peak > (2 ** 5) / (2 ** BIT)
+def voice_activity_detection(peaks):
+    return np.mean(peaks[-10:]) > VAD_THES
 
-def calc_gain_dBFS(wav):
+def calc_gain_dBFS(wav, vad):
     db = mean_dBFS(wav)
+    if not vad:
+        return 0
     assert len(AGC_DBS) == len(AGC_GAIN), 'check'
     for i in range(len(AGC_DBS)):
         if db > AGC_DBS[i]:
@@ -70,31 +85,41 @@ def arithmetic_mean(li):
     return np.mean(li)
 
 def auto_gain_control(wav):
-    AGC_WINDOW = 50
     chunks = np.array_split(wav, int(len(wav) / CHUNK_SIZE))
-    wav_outs = []
-    wav_gains = [0 for i in range(AGC_WINDOW)]
-    wav_in_dbs = []
-    wav_out_dbs = []
+    wav_out = []
+    gains = [0 for i in range(AGC_WINDOW)]
+    wav_in_db = []
+    wav_out_db = []
+    peaks = []
+    vads = []
     for chunk_in in chunks:
-        if VERBOSE:        
-            print('\n\tchunk:', len(chunk_in), chunk_in)
-            print('\tabs avg:%.6f' % np.mean(np.abs(chunk_in)))
-            # print('\tpeak:%.6f' % peak_detector(chunk_in))
-            # print('\tact:',voice_activity_detection(peak))
+        peak = peak_detector(chunk_in)
+        peaks.append(peak)
 
-        # AUTO GAIN CONTROLLER
-        gain = calc_gain_dBFS(chunk_in)
+        vad = voice_activity_detection(peaks)
+        vads.append(vad)
+
+        
+        if VERBOSE:        
+            print('\n\tchunk: %.1f ms' %(len(chunk_in) / SAMPLE_RATE * 1000))
+            print('\tAVG AMP: %.6f' % np.mean(np.abs(chunk_in)))
+            print('\tPD: %.6f' % peak)
+            print('\tVAD: %.6f' % vad)
+
+        # AUTO GAIN CONTROL
+        gain = calc_gain_dBFS(chunk_in, vad)
         # TODO 积分电路是这样实现的吗？
-        # gain = arithmetic_mean(wav_gains[-AGC_WINDOW:] + [gain])
-        wav_gains.append(gain)
+        gain = arithmetic_mean(gains[-AGC_WINDOW:] + [gain])
+        if vad:
+            gains.append(gain)
         chunk_out = chunk_in * (2 ** gain)
-        wav_in_dbs.append(mean_dBFS(chunk_in))
-        wav_out_dbs.append(mean_dBFS(chunk_out))
-        wav_outs.append(chunk_out)
+        wav_in_db.append(mean_dBFS(chunk_in))
+        wav_out_db.append(mean_dBFS(chunk_out))
+        wav_out.append(chunk_out)
+
         if VERBOSE: print('\tgain:%.4f db:%.2f -> %.2f' %(gain, mean_dBFS(chunk_in), mean_dBFS(chunk_out)))
 
-    return np.concatenate(wav_outs), np.array(wav_gains[AGC_WINDOW:]), np.array(wav_in_dbs), np.array(wav_out_dbs)
+    return np.concatenate(wav_out), np.array(gains[AGC_WINDOW:]), np.array(wav_in_db), np.array(wav_out_db), np.array(peaks), np.array(vads)
 
 def AGC(wav):
     wav_outs = []
@@ -108,66 +133,104 @@ def AGC(wav):
 
 
 N = len(IN_PATHS)
-in_paths = IN_PATHS
-out_paths = OUT_FILES
 rates = [None for i in range(N)]
 wav_in = [None for i in range(N)]
 wav_outs = [None for i in range(N)]
 wav_out_dbs  = [None for i in range(N)]
 wav_in_dbs  = [None for i in range(N)]
 wav_gains = [None for i in range(N)]
+wav_peaks = [None for i in range(N)]
+wav_vads = [None for i in range(N)]
 for i in range(N):
-    print('\nauto_gain_control:', in_paths[i])
-    rates[i], wav_in[i] = scipy.io.wavfile.read(in_paths[i])
+    print('\nauto_gain_control:', IN_PATHS[i])
 
-    wav_outs[i], wav_gains[i], wav_in_dbs[i], wav_out_dbs[i] = auto_gain_control(wav_in[i])
+    # Input
+    rates[i], wav_in[i] = scipy.io.wavfile.read(IN_PATHS[i])
+    
+    # Sample
+    # wav_in[i] = wav_in[i][:SAMPLE_RATE * 2]
 
-    scipy.io.wavfile.write(out_paths[i], rates[i], wav_outs[i])
+    # AGC
+    wav_outs[i], wav_gains[i], wav_in_dbs[i], wav_out_dbs[i], wav_peaks[i], wav_vads[i]  = auto_gain_control(wav_in[i])
+
+    # Output
+    scipy.io.wavfile.write(OUT_PATHS[i], rates[i], wav_outs[i])
 
 ##### Graph ####
+if not PLOT:
+    exit()
 print('\nplotting:', PLOT_PATH)
 plots = []
 for i in range(N):
     plots += [
         wav_sample(wav_in[i], PLOT_WAV_SAMPLE_NUM),
         wav_in_dbs[i],
+        wav_peaks[i],
+        wav_vads[i],
         wav_sample(wav_outs[i], PLOT_WAV_SAMPLE_NUM),
         wav_out_dbs[i],
         wav_gains[i],
         ]
-FIG = 5
+FIG = 7
 COL = 1
 ROW = N * FIG
 fig = plt.figure(figsize=(20 * COL, 3 * ROW))
 for i in range(N):
-    ax1 = fig.add_subplot(ROW, COL, 1 + FIG * i)
-    ax1.set_title(in_paths[i])
-    ax1.set_autoscale_on(False)
-    ax1.axis([0, PLOT_WAV_SAMPLE_NUM, -PLOT_WAV_MAX, PLOT_WAV_MAX])
-    ax1.plot(plots[0 + FIG * i])
+    j = 0
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title(IN_PATHS[i])
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), -PLOT_WAV_MAX, PLOT_WAV_MAX])
+    ax.plot(plot)
 
-    ax2 = fig.add_subplot(ROW, COL, 2 + FIG * i)
-    ax2.set_title('input db')
-    ax2.set_autoscale_on(False)
-    ax2.axis([0, len(plots[1 + FIG * i]), PLOT_DB_MIN, PLOT_DB_MAX])
-    ax2.plot(plots[1 + FIG * i])
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title('input db')
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), PLOT_DB_MIN, PLOT_DB_MAX])
+    ax.plot(plot)
 
-    ax3 = fig.add_subplot(ROW, COL, 3 + FIG * i)
-    ax3.set_title(out_paths[i])
-    ax3.set_autoscale_on(False)
-    ax3.axis([0, PLOT_WAV_SAMPLE_NUM, -PLOT_WAV_MAX, PLOT_WAV_MAX])
-    ax3.plot(plots[2 + FIG * i])
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title('PD')
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), PLOT_PD_MIN, PLOT_PD_MAX])
+    ax.plot(plot)
 
-    ax4 = fig.add_subplot(ROW, COL, 4 + FIG * i)
-    ax4.set_title('output db')
-    ax4.set_autoscale_on(False)
-    ax4.axis([0, len(plots[3 + FIG * i]), PLOT_DB_MIN, PLOT_DB_MAX])
-    ax4.plot(plots[3 + FIG * i])
 
-    ax5 = fig.add_subplot(ROW, COL, 5 + FIG * i)
-    ax5.set_title('auto gain')
-    ax5.set_autoscale_on(False)
-    ax5.axis([0, len(plots[4 + FIG * i]), -PLOT_GAIN_MAX, PLOT_GAIN_MAX])
-    ax5.plot(plots[4 + FIG * i])
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title('VAD')
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), PLOT_VAD_MIN, PLOT_VAD_MAX])
+    ax.plot(plot)
 
-plt.savefig(PLOT_PATH, bbox_inches='tight', dpi=70)
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title(OUT_PATHS[i])
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), -PLOT_WAV_MAX, PLOT_WAV_MAX])
+    ax.plot(plot)
+
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title('output db')
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), PLOT_DB_MIN, PLOT_DB_MAX])
+    ax.plot(plot)
+
+    j += 1
+    plot = plots[j + FIG * i]
+    ax = fig.add_subplot(ROW, COL, 1 + j + FIG * i)
+    ax.set_title('auto gain')
+    ax.set_autoscale_on(False)
+    ax.axis([0, len(plot), PLOT_GAIN_MIN, PLOT_GAIN_MAX])
+    ax.plot(plot)
+
+plt.savefig(PLOT_PATH, bbox_inches='tight', dpi=50)
