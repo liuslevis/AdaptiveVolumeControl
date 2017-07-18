@@ -44,6 +44,8 @@ Speech Signal http://www.ti.com/lit/wp/spraal1/spraal1.pdf
 
 Automatic gain control https://en.wikipedia.org/wiki/Automatic_gain_control
 
+Python AGC of audio time-freq Demo https://github.com/jorgehatccrma/pyagc
+
 Adaptive volume normalization on a stream of PCM data https://dsp.stackexchange.com/questions/24335/adaptive-volume-normalization-on-a-stream-of-pcm-data
 
 Adaptive Gain Control with the Least Mean Squares Algorithm https://www.allaboutcircuits.com/technical-articles/adaptive-gain-control-with-the-least-mean-squares-algorithm/
