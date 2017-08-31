@@ -55,7 +55,7 @@ Control http://web.cse.ohio-state.edu/~shen.94/papers//Li2001.pdf
 
 Automatic Loudness Control https://www.acoustics.asn.au/conference_proceedings/ICA2010/cdrom-ICA2010/papers/p960.pdf
 
-StreamingKit https://github.com/login?return_to=%2Ftumtumtum%2FStreamingKit
+StreamingKit https://github.com/tumtumtum/StreamingKit
 
 iOS AVAudioEngine http://www.jianshu.com/p/506c62183763
 
